@@ -4,17 +4,21 @@ from cpython cimport (
     PyDict_Contains, PyDict_GetItem, PyDict_SetItem)
 
 
+import threading
+
 cdef class CachedProperty:
 
     cdef readonly:
-        object func, name, __doc__
+        object func, name, __doc__, lock
 
     def __init__(self, func):
         self.func = func
         self.name = func.__name__
         self.__doc__ = getattr(func, '__doc__', None)
 
-    def __get__(self, obj, typ):
+        self.lock = threading.Lock()
+
+    def core(self, obj, typ):
         if obj is None:
             # accessed on the class, not the instance
             return self
@@ -34,6 +38,12 @@ cdef class CachedProperty:
             val = self.func(obj)
             PyDict_SetItem(cache, self.name, val)
         return val
+
+    def __get__(self, obj, typ):
+        # Fix for github issue #21150
+        with self.lock:
+            return self.core(obj, typ)
+
 
     def __set__(self, obj, value):
         raise AttributeError("Can't set attribute")
